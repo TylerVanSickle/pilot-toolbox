@@ -48,6 +48,28 @@ export function saveCustomAcronyms(acronyms: CustomAcronym[]) {
   try { localStorage.setItem("pilot-custom-acronyms", JSON.stringify(acronyms)); } catch {}
 }
 
+// === Acronym Overrides (edits to built-in acronyms) ===
+
+export interface AcronymOverride {
+  originalId: number;
+  acronym: string;
+  category: string;
+  letters: string[];
+  meanings: string[];
+  description: string;
+}
+
+export function loadAcronymOverrides(): Record<number, AcronymOverride> {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(localStorage.getItem("pilot-acronym-overrides") || "{}");
+  } catch { return {}; }
+}
+
+export function saveAcronymOverrides(overrides: Record<number, AcronymOverride>) {
+  try { localStorage.setItem("pilot-acronym-overrides", JSON.stringify(overrides)); } catch {}
+}
+
 // === Flagged Items ===
 
 export function loadFlaggedQuestions(): Set<number> {

@@ -7,7 +7,10 @@ import {
   saveCustomAcronyms,
   loadFlaggedAcronyms,
   saveFlaggedAcronyms,
+  loadAcronymOverrides,
+  saveAcronymOverrides,
   type CustomAcronym,
+  type AcronymOverride,
 } from "@/data/storage";
 import {
   Brain,
@@ -25,6 +28,8 @@ import {
   Plus,
   X,
   Trash2,
+  Pencil,
+  Undo2,
 } from "lucide-react";
 
 type Mode = "study" | "quiz";
@@ -45,18 +50,24 @@ function AcronymStudyCard({
   isFlagged,
   onToggleFlag,
   isCustom,
+  isOverridden,
   onDelete,
+  onEdit,
+  onRevert,
 }: {
   acronym: Acronym;
   isFlagged: boolean;
   onToggleFlag: () => void;
   isCustom: boolean;
+  isOverridden: boolean;
   onDelete?: () => void;
+  onEdit: () => void;
+  onRevert?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="bg-card border border-border rounded-xl overflow-hidden">
+    <div className={`bg-card border rounded-xl overflow-hidden ${isOverridden ? "border-accent/30" : "border-border"}`}>
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center justify-between px-5 py-4 hover:bg-card-hover transition-colors"
@@ -71,8 +82,18 @@ function AcronymStudyCard({
           {isCustom && (
             <span className="text-xs text-accent bg-accent/10 rounded-full px-2 py-0.5">Custom</span>
           )}
+          {isOverridden && !isCustom && (
+            <span className="text-xs text-accent bg-accent/10 rounded-full px-2 py-0.5">Edited</span>
+          )}
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => { e.stopPropagation(); onEdit(); }}
+            className="text-muted/30 hover:text-accent transition-colors"
+            title="Edit"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
           <button
             onClick={(e) => { e.stopPropagation(); onToggleFlag(); }}
             className={`transition-colors ${isFlagged ? "text-warning" : "text-muted/30 hover:text-warning"}`}
@@ -83,8 +104,18 @@ function AcronymStudyCard({
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(); }}
               className="text-muted/30 hover:text-danger transition-colors"
+              title="Delete"
             >
               <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {isOverridden && !isCustom && onRevert && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRevert(); }}
+              className="text-muted/30 hover:text-warning transition-colors"
+              title="Revert to original"
+            >
+              <Undo2 className="w-3.5 h-3.5" />
             </button>
           )}
           {expanded ? <ChevronUp className="w-5 h-5 text-muted" /> : <ChevronDown className="w-5 h-5 text-muted" />}
@@ -113,21 +144,33 @@ function AcronymStudyCard({
 
 // === ADD ACRONYM MODAL ===
 
-function AddAcronymModal({ onClose, onSave }: { onClose: () => void; onSave: (a: CustomAcronym) => void }) {
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState("Custom");
-  const [description, setDescription] = useState("");
-  const [entries, setEntries] = useState<{ letter: string; meaning: string }[]>([
-    { letter: "", meaning: "" },
-    { letter: "", meaning: "" },
-    { letter: "", meaning: "" },
-  ]);
+function AcronymModal({
+  onClose,
+  onSave,
+  editing,
+}: {
+  onClose: () => void;
+  onSave: (a: CustomAcronym) => void;
+  editing?: Acronym | null;
+}) {
+  const [name, setName] = useState(editing?.acronym || "");
+  const [category, setCategory] = useState(editing?.category || "Custom");
+  const [description, setDescription] = useState(editing?.description || "");
+  const [entries, setEntries] = useState<{ letter: string; meaning: string }[]>(
+    editing
+      ? editing.letters.map((l, i) => ({ letter: l, meaning: editing.meanings[i] || "" }))
+      : [
+          { letter: "", meaning: "" },
+          { letter: "", meaning: "" },
+          { letter: "", meaning: "" },
+        ]
+  );
 
   const handleSubmit = () => {
     const valid = entries.filter((e) => e.letter.trim() && e.meaning.trim());
     if (!name.trim() || valid.length < 2) return;
     onSave({
-      id: Date.now(),
+      id: editing?.id || Date.now(),
       acronym: name.trim().toUpperCase(),
       category: category.trim() || "Custom",
       letters: valid.map((e) => e.letter.trim().toUpperCase()),
@@ -142,7 +185,7 @@ function AddAcronymModal({ onClose, onSave }: { onClose: () => void; onSave: (a:
     <div className="fixed inset-0 bg-background/80 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-foreground">Add Custom Acronym</h3>
+          <h3 className="text-lg font-bold text-foreground">{editing ? "Edit Acronym" : "Add Custom Acronym"}</h3>
           <button onClick={onClose} className="text-muted hover:text-foreground"><X className="w-5 h-5" /></button>
         </div>
 
@@ -230,7 +273,7 @@ function AddAcronymModal({ onClose, onSave }: { onClose: () => void; onSave: (a:
             disabled={!name.trim() || entries.filter((e) => e.letter.trim() && e.meaning.trim()).length < 2}
             className="w-full py-2.5 bg-accent text-background font-medium rounded-xl hover:bg-accent-dim transition-colors disabled:opacity-30"
           >
-            Add Acronym
+            {editing ? "Save Changes" : "Add Acronym"}
           </button>
         </div>
       </div>
@@ -640,17 +683,27 @@ export default function AcronymsPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [viewFilter, setViewFilter] = useState<"all" | "flagged">("all");
   const [customAcronyms, setCustomAcronyms] = useState<CustomAcronym[]>([]);
+  const [overrides, setOverrides] = useState<Record<number, AcronymOverride>>({});
   const [flaggedIds, setFlaggedIds] = useState<Set<number>>(new Set());
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [editingAcronym, setEditingAcronym] = useState<Acronym | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setCustomAcronyms(loadCustomAcronyms());
+    setOverrides(loadAcronymOverrides());
     setFlaggedIds(loadFlaggedAcronyms());
     setMounted(true);
   }, []);
 
-  const allAcronyms: Acronym[] = [...acronyms, ...customAcronyms as unknown as Acronym[]];
+  // Merge overrides into built-in acronyms
+  const mergedBuiltins: Acronym[] = acronyms.map((a) => {
+    const ov = overrides[a.id];
+    if (!ov) return a;
+    return { ...a, acronym: ov.acronym, category: ov.category, letters: ov.letters, meanings: ov.meanings, description: ov.description, altAnswers: undefined };
+  });
+
+  const allAcronyms: Acronym[] = [...mergedBuiltins, ...customAcronyms as unknown as Acronym[]];
   const allCategories = [...new Set([...acronymCategories, ...customAcronyms.map((a) => a.category)])];
 
   const toggleFlag = (id: number) => {
@@ -663,16 +716,44 @@ export default function AcronymsPage() {
     });
   };
 
-  const handleAddAcronym = (a: CustomAcronym) => {
-    const updated = [...customAcronyms, a];
-    setCustomAcronyms(updated);
-    saveCustomAcronyms(updated);
+  const handleSaveAcronym = (a: CustomAcronym) => {
+    // Check if editing a built-in
+    const builtIn = acronyms.find((b) => b.id === a.id);
+    if (builtIn) {
+      // Save as override
+      const updated = { ...overrides, [builtIn.id]: { originalId: builtIn.id, acronym: a.acronym, category: a.category, letters: a.letters, meanings: a.meanings, description: a.description } };
+      setOverrides(updated);
+      saveAcronymOverrides(updated);
+    } else if (customAcronyms.find((c) => c.id === a.id)) {
+      // Editing existing custom
+      const updated = customAcronyms.map((c) => c.id === a.id ? a : c);
+      setCustomAcronyms(updated);
+      saveCustomAcronyms(updated);
+    } else {
+      // New custom
+      const updated = [...customAcronyms, a];
+      setCustomAcronyms(updated);
+      saveCustomAcronyms(updated);
+    }
+    setEditingAcronym(null);
   };
 
   const handleDeleteAcronym = (id: number) => {
     const updated = customAcronyms.filter((a) => a.id !== id);
     setCustomAcronyms(updated);
     saveCustomAcronyms(updated);
+  };
+
+  const handleRevertOverride = (id: number) => {
+    const updated = { ...overrides };
+    delete updated[id];
+    setOverrides(updated);
+    saveAcronymOverrides(updated);
+  };
+
+  const handleEditAcronym = (acr: Acronym) => {
+    setEditingAcronym(acr);
+    setShowModal(true);
   };
 
   let filtered = selectedCategory === "All"
@@ -775,16 +856,23 @@ export default function AcronymsPage() {
             </div>
           ) : (
             <div className="space-y-3" suppressHydrationWarning>
-              {filtered.map((acr) => (
-                <AcronymStudyCard
-                  key={acr.id}
-                  acronym={acr}
-                  isFlagged={mounted ? flaggedIds.has(acr.id) : false}
-                  onToggleFlag={() => toggleFlag(acr.id)}
-                  isCustom={mounted ? !!(acr as unknown as CustomAcronym).isCustom : false}
-                  onDelete={(acr as unknown as CustomAcronym).isCustom ? () => handleDeleteAcronym(acr.id) : undefined}
-                />
-              ))}
+              {filtered.map((acr) => {
+                const isCustom = mounted ? !!(acr as unknown as CustomAcronym).isCustom : false;
+                const isOverridden = mounted ? !!overrides[acr.id] : false;
+                return (
+                  <AcronymStudyCard
+                    key={acr.id}
+                    acronym={acr}
+                    isFlagged={mounted ? flaggedIds.has(acr.id) : false}
+                    onToggleFlag={() => toggleFlag(acr.id)}
+                    isCustom={isCustom}
+                    isOverridden={isOverridden}
+                    onDelete={isCustom ? () => handleDeleteAcronym(acr.id) : undefined}
+                    onEdit={() => handleEditAcronym(acr)}
+                    onRevert={isOverridden && !isCustom ? () => handleRevertOverride(acr.id) : undefined}
+                  />
+                );
+              })}
             </div>
           )}
         </>
@@ -801,14 +889,20 @@ export default function AcronymsPage() {
 
       {/* Add acronym FAB */}
       <button
-        onClick={() => setShowAddModal(true)}
+        onClick={() => { setEditingAcronym(null); setShowModal(true); }}
         className="fixed bottom-6 right-6 w-14 h-14 bg-accent text-background rounded-full shadow-lg hover:bg-accent-dim transition-colors flex items-center justify-center z-40"
         title="Add custom acronym"
       >
         <Plus className="w-6 h-6" />
       </button>
 
-      {showAddModal && <AddAcronymModal onClose={() => setShowAddModal(false)} onSave={handleAddAcronym} />}
+      {showModal && (
+        <AcronymModal
+          onClose={() => { setShowModal(false); setEditingAcronym(null); }}
+          onSave={handleSaveAcronym}
+          editing={editingAcronym}
+        />
+      )}
     </div>
   );
 }
