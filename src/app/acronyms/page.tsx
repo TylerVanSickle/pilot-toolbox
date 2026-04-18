@@ -68,9 +68,17 @@ function AcronymStudyCard({
 
   return (
     <div className={`bg-card border rounded-xl overflow-hidden ${isOverridden ? "border-accent/30" : "border-border"}`}>
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-5 py-4 hover:bg-card-hover transition-colors"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setExpanded(!expanded);
+          }
+        }}
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-card-hover transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-3">
           <span className="text-lg font-bold text-accent font-mono">
@@ -120,7 +128,7 @@ function AcronymStudyCard({
           )}
           {expanded ? <ChevronUp className="w-5 h-5 text-muted" /> : <ChevronDown className="w-5 h-5 text-muted" />}
         </div>
-      </button>
+      </div>
       {expanded && (
         <div className="px-5 pb-5 animate-slide-up">
           <p className="text-sm text-muted mb-3">{acronym.description}</p>
