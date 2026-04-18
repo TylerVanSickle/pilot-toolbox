@@ -18,7 +18,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 
-type Mode = "reference" | "study" | "quiz";
+type Mode = "reference" | "study" | "multiple-choice" | "quiz";
 type ImportanceFilter = "all" | "critical" | "important";
 
 function shuffleArray<T>(arr: T[]): T[] {
@@ -327,6 +327,219 @@ function doesTitleGuessMatch(guess: string, reg: Regulation): boolean {
   return false;
 }
 
+// === MULTIPLE CHOICE QUIZ ===
+
+function RegMultipleChoice({ pool, allRegs }: { pool: Regulation[]; allRegs: Regulation[] }) {
+  const [deck, setDeck] = useState<Regulation[]>(() => shuffleArray(pool));
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [direction, setDirection] = useState<"rule-to-number" | "number-to-rule">("rule-to-number");
+  const [choices, setChoices] = useState<Regulation[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [score, setScore] = useState({ correct: 0, total: 0 });
+  const [started, setStarted] = useState(false);
+
+  const current = deck[currentIndex];
+
+  useEffect(() => {
+    setDeck(shuffleArray(pool));
+    setCurrentIndex(0);
+    setSelectedIndex(null);
+    setStarted(false);
+    setScore({ correct: 0, total: 0 });
+  }, [pool.length]);
+
+  // Generate 4 choices when question changes
+  useEffect(() => {
+    if (!current || !started) return;
+    // 3 random distractors + the correct answer, shuffled
+    const distractorPool = allRegs.filter((r) => r.id !== current.id);
+    const distractors = shuffleArray(distractorPool).slice(0, 3);
+    const all = shuffleArray([current, ...distractors]);
+    setChoices(all);
+    setSelectedIndex(null);
+  }, [currentIndex, started, current?.id, allRegs.length]);
+
+  if (!current) {
+    return <div className="text-center py-12 text-muted">No regulations match your filters.</div>;
+  }
+
+  if (!started) {
+    return (
+      <div className="max-w-xl mx-auto text-center py-12">
+        <div className="mx-auto mb-4 w-16 h-16 bg-accent/10 rounded-2xl flex items-center justify-center">
+          <CheckCircle className="w-8 h-8 text-accent" />
+        </div>
+        <h2 className="text-xl font-bold text-foreground mb-2">Multiple Choice</h2>
+        <p className="text-muted mb-6 text-sm">
+          Pick the right answer from four options — easier way to start memorizing regulations.
+        </p>
+
+        <div className="flex justify-center gap-3 mb-6">
+          <button
+            onClick={() => setDirection("rule-to-number")}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+              direction === "rule-to-number" ? "bg-accent text-background" : "bg-card border border-border text-muted hover:text-foreground"
+            }`}
+          >
+            Rule → Pick FAR
+          </button>
+          <button
+            onClick={() => setDirection("number-to-rule")}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+              direction === "number-to-rule" ? "bg-accent text-background" : "bg-card border border-border text-muted hover:text-foreground"
+            }`}
+          >
+            FAR → Pick Rule
+          </button>
+        </div>
+
+        <button
+          onClick={() => { setDeck(shuffleArray(pool)); setCurrentIndex(0); setStarted(true); }}
+          className="px-6 py-3 bg-accent text-background font-medium rounded-xl hover:bg-accent-dim transition-colors"
+        >
+          Start Quiz ({pool.length} regulations)
+        </button>
+
+        {score.total > 0 && (
+          <p className="text-sm text-muted mt-4">
+            Last round: {score.correct}/{score.total} ({Math.round((score.correct / score.total) * 100)}%)
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  const handleSelect = (idx: number) => {
+    if (selectedIndex !== null) return;
+    setSelectedIndex(idx);
+    const isCorrect = choices[idx].id === current.id;
+    setScore((p) => ({
+      correct: p.correct + (isCorrect ? 1 : 0),
+      total: p.total + 1,
+    }));
+  };
+
+  const advance = () => {
+    if (currentIndex < deck.length - 1) {
+      setCurrentIndex((i) => i + 1);
+      setSelectedIndex(null);
+    } else {
+      setStarted(false);
+    }
+  };
+
+  return (
+    <div className="max-w-xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-sm text-muted">{currentIndex + 1} / {deck.length}</span>
+        <span className="text-sm">
+          <span className="text-success">{score.correct}</span>
+          <span className="text-muted"> / </span>
+          <span className="text-foreground">{score.total}</span>
+          {score.total > 0 && (
+            <span className="text-muted ml-2">({Math.round((score.correct / score.total) * 100)}%)</span>
+          )}
+        </span>
+      </div>
+
+      {/* Progress */}
+      <div className="w-full h-2 bg-card rounded-full mb-6 overflow-hidden">
+        <div className="h-full bg-accent rounded-full transition-all" style={{ width: `${((currentIndex + 1) / deck.length) * 100}%` }} />
+      </div>
+
+      {/* Prompt */}
+      <div className="bg-card border border-border rounded-2xl p-6 mb-5">
+        {direction === "rule-to-number" ? (
+          <>
+            <p className="text-xs text-muted mb-2">Which FAR covers this rule?</p>
+            <p className="text-lg font-semibold text-foreground mb-1">{current.title}</p>
+            <p className="text-sm text-muted">{current.summary}</p>
+          </>
+        ) : (
+          <>
+            <p className="text-xs text-muted mb-2">What does this FAR cover?</p>
+            <p className="text-3xl font-mono font-bold text-accent">{current.far}</p>
+          </>
+        )}
+      </div>
+
+      {/* Choices */}
+      <div className="space-y-3 mb-5">
+        {choices.map((choice, idx) => {
+          const isCorrect = choice.id === current.id;
+          const isSelected = selectedIndex === idx;
+          let style = "bg-card border-border hover:border-accent/50 text-foreground cursor-pointer";
+          if (selectedIndex !== null) {
+            if (isCorrect) {
+              style = "bg-success/10 border-success text-success";
+            } else if (isSelected) {
+              style = "bg-danger/10 border-danger text-danger";
+            } else {
+              style = "bg-card border-border text-muted opacity-60";
+            }
+          }
+          return (
+            <button
+              key={`${choice.id}-${idx}`}
+              onClick={() => handleSelect(idx)}
+              disabled={selectedIndex !== null}
+              className={`w-full text-left px-5 py-4 rounded-xl border transition-all ${style}`}
+            >
+              <div className="flex items-start gap-3">
+                <span className="font-mono text-sm opacity-60 shrink-0">
+                  {String.fromCharCode(65 + idx)}.
+                </span>
+                <div className="flex-1">
+                  {direction === "rule-to-number" ? (
+                    <span className="font-mono font-semibold">{choice.far}</span>
+                  ) : (
+                    <>
+                      <span className="font-medium">{choice.title}</span>
+                      <p className="text-xs opacity-70 mt-0.5">{choice.summary}</p>
+                    </>
+                  )}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Feedback */}
+      {selectedIndex !== null && (
+        <div className="animate-slide-up">
+          <div className="bg-accent/5 border border-accent/20 rounded-xl p-5 mb-4">
+            <div className="flex items-start gap-3 mb-2">
+              <span className="font-mono font-bold text-accent bg-accent/10 rounded-lg px-2.5 py-1 shrink-0">
+                {current.far}
+              </span>
+              <div>
+                <p className="font-semibold text-foreground">{current.title}</p>
+                <p className="text-sm text-muted">{current.summary}</p>
+              </div>
+            </div>
+            <ul className="space-y-1 mt-3">
+              {current.keyPoints.slice(0, 3).map((p, i) => (
+                <li key={i} className="text-xs text-muted flex items-start gap-1.5">
+                  <span className="text-accent">•</span> {p}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <button
+            onClick={advance}
+            className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-accent text-background font-medium rounded-xl hover:bg-accent-dim transition-colors"
+          >
+            {currentIndex < deck.length - 1 ? "Next Regulation" : "See Results"}
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RegQuiz({ pool }: { pool: Regulation[] }) {
   const [deck, setDeck] = useState<Regulation[]>(() => shuffleArray(pool));
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -616,13 +829,22 @@ export default function RegulationsPage() {
             Study
           </button>
           <button
+            onClick={() => setMode("multiple-choice")}
+            className={`px-3 py-2 text-sm font-medium transition-colors ${
+              mode === "multiple-choice" ? "bg-accent text-background" : "text-muted hover:text-foreground"
+            }`}
+          >
+            <CheckCircle className="w-4 h-4 inline mr-1" />
+            Multiple Choice
+          </button>
+          <button
             onClick={() => setMode("quiz")}
             className={`px-3 py-2 text-sm font-medium transition-colors ${
               mode === "quiz" ? "bg-accent text-background" : "text-muted hover:text-foreground"
             }`}
           >
             <Shuffle className="w-4 h-4 inline mr-1" />
-            Quiz
+            Type Quiz
           </button>
         </div>
       </div>
@@ -699,6 +921,8 @@ export default function RegulationsPage() {
       )}
 
       {mode === "study" && <RegStudy pool={filtered} />}
+
+      {mode === "multiple-choice" && <RegMultipleChoice pool={filtered} allRegs={regulations} />}
 
       {mode === "quiz" && <RegQuiz pool={filtered} />}
     </div>
